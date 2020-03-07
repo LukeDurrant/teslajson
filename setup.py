@@ -22,4 +22,7 @@ setup(name='teslajson',
       py_modules=['teslajson'],
       author='Greg Glockner',
       license='MIT',
+      install_requires=[
+           'polling',
+      ]
       )

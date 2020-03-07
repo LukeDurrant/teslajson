@@ -20,12 +20,13 @@ try: # Python 3
     from urllib.request import ProxyHandler, HTTPBasicAuthHandler, HTTPHandler
 except: # Python 2
     from urllib import urlencode
-    from urllib2 import Request, build_opener
+    from urllib2 import Request, build_opener, HTTPError
     from urllib2 import ProxyHandler, HTTPBasicAuthHandler, HTTPHandler
 import json
 import datetime
 import calendar
 import warnings
+import polling
 
 class Connection(object):
     """Connection to Tesla Motors API"""
@@ -173,7 +174,13 @@ class Connection(object):
                 opener = build_opener(handler)
         else:
             opener = build_opener()
-        resp = opener.open(req)
+        try:
+            resp = opener.open(req)
+        except HTTPError as e:
+            if e.getcode() == 408:
+                raise ContinuePollingError
+            else:
+                raise e
         charset = resp.info().get('charset', 'utf-8')
         return json.loads(resp.read().decode(charset))
         
@@ -202,9 +209,14 @@ class Vehicle(dict):
         """Get vehicle data_request"""
         return self.data('data_request/%s' % name)
     
-    def wake_up(self):
+    def wake_up(self, timeout=35, step=3):
         """Wake the vehicle"""
-        return self.post('wake_up')
+        return polling.poll(
+            lambda: self.post('wake_up') is not None,
+            ignore_exceptions=(ContinuePollingError,),
+            timeout=timeout,
+            step=step,
+        )
     
     def command(self, name, data={}):
         """Run the command for the vehicle"""
@@ -213,7 +225,18 @@ class Vehicle(dict):
     def get(self, command):
         """Utility command to get data from API"""
         return self.connection.get('vehicles/%i/%s' % (self['id'], command))
-    
-    def post(self, command, data={}):
+
+    def post(self, command, data={}, timeout=35, step=3):
         """Utility command to post data to API"""
-        return self.connection.post('vehicles/%i/%s' % (self['id'], command), data)
+        return polling.poll(
+            lambda: self.connection.post('vehicles/%i/%s' % (self['id'], command), data) is not None,
+            ignore_exceptions=(ContinuePollingError,),
+            timeout=timeout,
+            step=step,
+        )
+
+class ContinuePollingError(Exception):
+    pass
+
+class TimeoutError(Exception):
+    pass
