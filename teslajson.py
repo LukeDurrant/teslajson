@@ -29,6 +29,8 @@ import warnings
 
 class Connection(object):
     """Connection to Tesla Motors API"""
+    __version__ = "1.6.0"
+
     def __init__(self,
             email='',
             password='',
@@ -131,10 +133,10 @@ class Connection(object):
 
         if self.refresh_token:
             self.oauth = {
-                "grant_type" : "refresh_token",
-                "client_id" : self.current_client['id'],
-                "client_secret" : self.current_client['secret'],
-                "refresh_token" : self.refresh_token }
+                "grant_type": "refresh_token",
+                "client_id": self.current_client['id'],
+                "client_secret": self.current_client['secret'],
+                "refresh_token": self.refresh_token }
 
         self.head = {}
         tokens = self.__open("/oauth/token", data=self.oauth)
@@ -147,6 +149,7 @@ class Connection(object):
         """Raw urlopen command"""
         if not baseurl:
             baseurl = self.baseurl
+        self._user_agent()
         req = Request("%s%s" % (baseurl, url), headers=headers)
         try:
             req.data = urlencode(data).encode('utf-8') # Python 3
