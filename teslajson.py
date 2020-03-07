@@ -25,13 +25,18 @@ except: # Python 2
 import json
 import datetime
 import calendar
+import warnings
 
 class Connection(object):
     """Connection to Tesla Motors API"""
+    __version__ = "1.6.0"
+
     def __init__(self,
             email='',
             password='',
             access_token='',
+            tokens_file='',
+            tesla_client='{"v1": {"id": "e4a9949fcfa04068f59abb5a658f2bac0a3428e4652315490b659d5ab3f35a9e", "secret": "c75f14bbadc8bee3a7594412c31416f8300256d7668ea7e6e7f06727bfb9d220", "baseurl": "https://owner-api.teslamotors.com", "api": "/api/1/"}}',
             proxy_url = '',
             proxy_user = '',
             proxy_password = ''):
@@ -41,8 +46,14 @@ class Connection(object):
         associated with your account
 
         Required parameters:
-        email: your login for teslamotors.com
-        password: your password for teslamotors.com
+          Option 1: (will log in and get tokens using credentials)
+            email: your login for teslamotors.com
+            password: your password for teslamotors.com
+          Option 2: (will use tokens directly and refresh tokens as needed)
+            tokens_file: File containing json tokens data, will update after refresh
+          Option 3: (use use specified token until it is invalid>
+            access_token
+          If you combine option 1&2, it will populate the tokens file
         
         Optional parameters:
         access_token: API access token
@@ -53,22 +64,32 @@ class Connection(object):
         self.proxy_url = proxy_url
         self.proxy_user = proxy_user
         self.proxy_password = proxy_password
-        tesla_client = self.__open("/raw/0a8e0xTJ", baseurl="http://pastebin.com")
-        current_client = tesla_client['v1']
-        self.baseurl = current_client['baseurl']
-        if not self.baseurl.startswith('https:') or not self.baseurl.endswith(('.teslamotors.com','.tesla.com')):
-            raise IOError("Unexpected URL (%s) from pastebin" % self.baseurl)
-        self.api = current_client['api']
+        self.current_client = tesla_client['v1']
+        self.baseurl = self.current_client['baseurl']
+        self.api = self.current_client['api']
+        self.head = {}
+        self.tokens_file = tokens_file
+        self.access_token = access_token
+        self.refresh_token = None
+
         if access_token:
-            self.__sethead(access_token)
+            self._sethead(access_token)
         else:
             self.oauth = {
                 "grant_type" : "password",
-                "client_id" : current_client['id'],
-                "client_secret" : current_client['secret'],
+                "client_id" : self.current_client['id'],
+                "client_secret" : self.current_client['secret'],
                 "email" : email,
                 "password" : password }
             self.expiration = 0 # force refresh
+            if self.tokens_file:
+                try:
+                    with open(self.tokens_file, "r") as R:
+                        self._update_tokens(stream=R)
+                except IOError as e:
+                    warnings.warn("Could not open file %s: %s (pressing on in hopes of alternate authentication)" % (
+                    self.tokens_file, str(e)))
+
         self.vehicles = [Vehicle(v, self) for v in self.get('vehicles')['response']]
     
     def get(self, command):
@@ -83,17 +104,52 @@ class Connection(object):
             self.__sethead(auth['access_token'],
                            auth['created_at'] + auth['expires_in'] - 86400)
         return self.__open("%s%s" % (self.api, command), headers=self.head, data=data)
-    
-    def __sethead(self, access_token, expiration=float('inf')):
+
+    def _user_agent(self):
+        """Set the user agent"""
+        if not "User-Agent" in self.head:
+            self.head["User-Agent"] = 'teslajson.py ' + self.__version__
+
+    def _sethead(self, access_token, expiration=float('inf')):
         """Set HTTP header"""
         self.access_token = access_token
         self.expiration = expiration
         self.head = {"Authorization": "Bearer %s" % access_token}
-    
+
+    def _update_tokens(self, tokens=None, stream=None):
+        """Update tokens from dict or json stream"""
+
+        if stream:
+            tokens = json.load(stream)
+
+        self.access_token = tokens['access_token']
+        self.refresh_token = tokens['refresh_token']
+        self.expiration = tokens["created_at"] + tokens["expires_in"] - 86400
+
+        self._sethead(self.access_token, expiration=self.expiration)
+
+    def _refresh_token(self):
+        """Refresh tokens using either (preset) email/password or refresh_token"""
+
+        if self.refresh_token:
+            self.oauth = {
+                "grant_type": "refresh_token",
+                "client_id": self.current_client['id'],
+                "client_secret": self.current_client['secret'],
+                "refresh_token": self.refresh_token }
+
+        self.head = {}
+        tokens = self.__open("/oauth/token", data=self.oauth)
+        self._update_tokens(tokens=tokens)
+        if self.tokens_file:
+            with open(self.tokens_file, "w") as W:
+                W.write(json.dumps(tokens))
+
     def __open(self, url, headers={}, data=None, baseurl=""):
         """Raw urlopen command"""
         if not baseurl:
             baseurl = self.baseurl
+        self._user_agent()
         req = Request("%s%s" % (baseurl, url), headers=headers)
         try:
             req.data = urlencode(data).encode('utf-8') # Python 3
@@ -135,11 +191,15 @@ class Vehicle(dict):
         """
         super(Vehicle, self).__init__(data)
         self.connection = connection
-    
-    def data_request(self, name):
+
+    def data(self, name='data'):
         """Get vehicle data"""
-        result = self.get('data_request/%s' % name)
+        result = self.get('%s' % name)
         return result['response']
+
+    def data_request(self, name):
+        """Get vehicle data_request"""
+        return self.data(name, 'data_request/%s' % name)
     
     def wake_up(self):
         """Wake the vehicle"""
