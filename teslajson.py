@@ -32,6 +32,7 @@ class Connection(object):
             email='',
             password='',
             access_token='',
+            tesla_client='{"v1": {"id": "e4a9949fcfa04068f59abb5a658f2bac0a3428e4652315490b659d5ab3f35a9e", "secret": "c75f14bbadc8bee3a7594412c31416f8300256d7668ea7e6e7f06727bfb9d220", "baseurl": "https://owner-api.teslamotors.com", "api": "/api/1/"}}',
             proxy_url = '',
             proxy_user = '',
             proxy_password = ''):
@@ -53,11 +54,8 @@ class Connection(object):
         self.proxy_url = proxy_url
         self.proxy_user = proxy_user
         self.proxy_password = proxy_password
-        tesla_client = self.__open("/raw/0a8e0xTJ", baseurl="http://pastebin.com")
         current_client = tesla_client['v1']
         self.baseurl = current_client['baseurl']
-        if not self.baseurl.startswith('https:') or not self.baseurl.endswith(('.teslamotors.com','.tesla.com')):
-            raise IOError("Unexpected URL (%s) from pastebin" % self.baseurl)
         self.api = current_client['api']
         if access_token:
             self.__sethead(access_token)
@@ -135,11 +133,15 @@ class Vehicle(dict):
         """
         super(Vehicle, self).__init__(data)
         self.connection = connection
-    
-    def data_request(self, name):
+
+    def data(self, name='data'):
         """Get vehicle data"""
-        result = self.get('data_request/%s' % name)
+        result = self.get('%s' % name)
         return result['response']
+
+    def data_request(self, name):
+        """Get vehicle data_request"""
+        return self.data(name, 'data_request/%s' % name)
     
     def wake_up(self):
         """Wake the vehicle"""
