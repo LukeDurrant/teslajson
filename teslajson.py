@@ -29,7 +29,7 @@ import warnings
 
 class Connection(object):
     """Connection to Tesla Motors API"""
-    __version__ = "1.6.0"
+    __version__ = "1.7.0"
 
     def __init__(self,
             email='',
