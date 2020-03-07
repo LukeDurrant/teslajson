@@ -29,7 +29,7 @@ import warnings
 
 class Connection(object):
     """Connection to Tesla Motors API"""
-    __version__ = "1.7.0"
+    __version__ = "1.7.1"
 
     def __init__(self,
             email='',
@@ -64,6 +64,7 @@ class Connection(object):
         self.proxy_url = proxy_url
         self.proxy_user = proxy_user
         self.proxy_password = proxy_password
+        tesla_client = json.loads(tesla_client)
         self.current_client = tesla_client['v1']
         self.baseurl = self.current_client['baseurl']
         self.api = self.current_client['api']
@@ -101,7 +102,7 @@ class Connection(object):
         now = calendar.timegm(datetime.datetime.now().timetuple())
         if now > self.expiration:
             auth = self.__open("/oauth/token", data=self.oauth)
-            self.__sethead(auth['access_token'],
+            self._sethead(auth['access_token'],
                            auth['created_at'] + auth['expires_in'] - 86400)
         return self.__open("%s%s" % (self.api, command), headers=self.head, data=data)
 
@@ -199,7 +200,7 @@ class Vehicle(dict):
 
     def data_request(self, name):
         """Get vehicle data_request"""
-        return self.data(name, 'data_request/%s' % name)
+        return self.data('data_request/%s' % name)
     
     def wake_up(self):
         """Wake the vehicle"""
